@@ -26,44 +26,39 @@ namespace NinjaTrader.NinjaScript.Indicators
 	public class GooRSI : Indicator
 	{
 		#region Private variables
-		private int lowThreshold = 32; 	// Default Lower Threshold
-		private int highThreshold=68; 	// Default Upper Threshold
-		private int refLineUpper = 60;	// Upper reference line
-		private int refLineLower = 40;	// Lower reference line
-		private bool showRefCross=false; // color code reference line crosses
-		private bool exceedThresh=false;	// Reached an extreme
-
+		private bool exceedThresh=false;	// Reached a reference threshold, either upper or lower
 		#endregion
 		
 		protected override void OnStateChange()
 		{
 			if (State == State.SetDefaults)
 			{
-				Description							= @"RSI indicator with adjustable zones";
-				Name								= "GooRSI";
-				Calculate							= Calculate.OnEachTick;
-				IsOverlay							= false;
-				DisplayInDataBox					= true;
-				DrawOnPricePanel					= true;
-				DrawHorizontalGridLines				= true;
-				DrawVerticalGridLines				= true;
-				PaintPriceMarkers					= true;
-				ScaleJustification					= NinjaTrader.Gui.Chart.ScaleJustification.Right;
+				Description						= @"RSI indicator with adjustable zones";
+				Name							= "GooRSI";
+				Calculate						= Calculate.OnEachTick;
+				IsOverlay						= false;
+				DisplayInDataBox				= true;
+				DrawOnPricePanel				= true;
+				DrawHorizontalGridLines			= true;
+				DrawVerticalGridLines			= true;
+				PaintPriceMarkers				= true;
+				ScaleJustification				= NinjaTrader.Gui.Chart.ScaleJustification.Right;
 				//Disable this property if your indicator requires custom values that cumulate with each new market data event. 
 				//See Help Guide for additional information.
-				IsSuspendedWhileInactive			= true;
+				IsSuspendedWhileInactive		= true;
 				LowThreshold					= 32;
 				HighThreshold					= 68;
 				UpperRefLine					= 60;
 				LowerRefLine					= 40;
 				ShowRefCross					= true;
+				ShowRefRetrace					= true;
 				
 				// Set up graphic objects for this indicator
 				AddPlot(Brushes.Orange, "myRSI");
-				AddLine(Brushes.Red, this.highThreshold, "Short");
-				AddLine(Brushes.Green, this.lowThreshold, "Long");
-				AddLine(Brushes.White, 60, "RefUpper");
-				AddLine(Brushes.White, 40, "RefLower");
+				AddLine(Brushes.Red, this.HighThreshold, "Short");
+				AddLine(Brushes.Green, this.LowThreshold, "Long");
+				AddLine(Brushes.White, this.UpperRefLine, "RefUpper");
+				AddLine(Brushes.Blue, this.LowerRefLine, "RefLower");
 				this.DrawOnPricePanel = false;
 			}
 			else if (State == State.Configure)
@@ -80,37 +75,64 @@ namespace NinjaTrader.NinjaScript.Indicators
 		{
 			SolidColorBrush plotColor = Brushes.Gray;
 			SolidColorBrush backColor = Brushes.Transparent;
-			
+			SolidColorBrush allBackColor = Brushes.Transparent;
+			Brush dotColor = Brushes.Transparent;
+
 			if(this.CurrentBar < 20)
 				return;
 			
-			// We use straight up RSI
+			// We use straight up RSI to calculate actual values
 			myRSI[0] = RSI(14,3)[1];
 			
 			//Debug.Print("Bar={2},[0]={0}, [1]={1}", MyRSI[0], MyRSI[1], this.CurrentBar);
-			if(this.CrossAbove(myRSI, this.highThreshold, 1)==true)
+			if(this.CrossAbove(myRSI, this.HighThreshold, 1)==true)
 			{
+				dotColor = Brushes.Yellow;
 				plotColor = Brushes.Crimson;
-				backColor = Brushes.DarkRed;
-			//	this.exceedThresh = true;
-			//	this.DrawDot("GooRSI"+this.CurrentBar.ToString(), true, 0, MyRSI[0], Color.Crimson);
-			//	this.indicatorCodes.Set((double)Codes_RSI.CrossUp);
-			} else if(myRSI[0] >= this.highThreshold) {
+				backColor = Brushes.Crimson;
+				this.exceedThresh = true;
+			} else if(myRSI[0] >= this.HighThreshold) {
 				plotColor = Brushes.Crimson;
-			}
-			else if (this.CrossBelow(myRSI, this.lowThreshold, 1)==true)
+			} else if (this.CrossBelow(myRSI, this.LowThreshold, 1)==true)
 			{
+				dotColor = Brushes.Yellow;
 				plotColor = Brushes.LimeGreen;
-				backColor = Brushes.DarkGreen;
-			//	this.exceedThresh = true;
-			//	this.DrawDot("GooRSI"+this.CurrentBar.ToString(), true, 0, MyRSI[0], Color.LimeGreen);
-			//	this.indicatorCodes.Set((double)Codes_RSI.CrossDown);
-			} else if(myRSI[0] <= this.lowThreshold) {
+				backColor = Brushes.LimeGreen;
+				this.exceedThresh = true;
+			} else if(myRSI[0] <= this.LowThreshold) {
 				plotColor = Brushes.LimeGreen;
 			}
 			
+			// Display color coded crossings on the indicator pane
+			if(this.ShowRefCross == true)
+			{
+				// Make sure we hit upper/lower threshhold before we retrace
+				if(exceedThresh == true)
+				{
+					if(this.CrossBelow(this.myRSI, this.UpperRefLine, 1) == true)
+					{
+						dotColor = Brushes.Blue;
+						backColor = Brushes.DarkRed;
+						// Once we cross, we must breach threshhold to retrigger
+						exceedThresh = false;
+					}
+					else if(this.CrossAbove(this.myRSI, this.LowerRefLine, 1) == true)
+					{
+						dotColor = Brushes.Blue;
+						backColor = Brushes.DarkGreen;
+						// Once we cross, we must breach threshhold to retrigger
+						this.exceedThresh = false;
+					}
+				}
+			}
+			
 			PlotBrushes[0][0] = plotColor;
-			BackBrushesAll[0] = backColor;
+			BackBrushes[0] = backColor;
+			BackBrushesAll[0] = allBackColor;
+			
+			if(dotColor != Brushes.Transparent) {
+				Draw.Dot(this, "dot"+this.CurrentBar.ToString(), true, 0, Close[0], dotColor, true);
+			}
 		}
 
 		#region Properties
@@ -122,33 +144,38 @@ namespace NinjaTrader.NinjaScript.Indicators
 			get { return Values[0];}
 		}
 		
+		[NinjaScriptProperty]
+		[Display(Name="Show Ref Cross", Description="Show crosses of reference lines", Order=1, GroupName="Parameters")]
+		public bool ShowRefCross
+		{ get; set; }
+		
+		[NinjaScriptProperty]
+		[Display(Name="Show Ref Retrace", Description="Show crosses back across reference lines", Order=2, GroupName="Parameters")]
+		public bool ShowRefRetrace
+		{ get; set; }
+		
 		[Range(0, int.MaxValue)]
 		[NinjaScriptProperty]
-		[Display(Name="LowThreshold", Description="Lower threshold value", Order=1, GroupName="Parameters")]
+		[Display(Name="LowThreshold", Description="Lower threshold value", Order=3, GroupName="Parameters")]
 		public int LowThreshold
 		{ get; set; }
 
 		[Range(0, int.MaxValue)]
 		[NinjaScriptProperty]
-		[Display(Name="HighThreshold", Description="Upper threshold value", Order=2, GroupName="Parameters")]
+		[Display(Name="HighThreshold", Description="Upper threshold value", Order=4, GroupName="Parameters")]
 		public int HighThreshold
 		{ get; set; }
 
 		[Range(0, int.MaxValue)]
 		[NinjaScriptProperty]
-		[Display(Name="UpperRefLine", Description="Upper reference line", Order=3, GroupName="Parameters")]
+		[Display(Name="UpperRefLine", Description="Upper reference line", Order=5, GroupName="Parameters")]
 		public int UpperRefLine
 		{ get; set; }
 
 		[Range(0, int.MaxValue)]
 		[NinjaScriptProperty]
-		[Display(Name="LowerRefLine", Description="Lower reference line", Order=4, GroupName="Parameters")]
+		[Display(Name="LowerRefLine", Description="Lower reference line", Order=6, GroupName="Parameters")]
 		public int LowerRefLine
-		{ get; set; }
-
-		[NinjaScriptProperty]
-		[Display(Name="ShowRefCross", Description="Enable display of reference line crosses", Order=5, GroupName="Parameters")]
-		public bool ShowRefCross
 		{ get; set; }
 		#endregion
 
@@ -162,18 +189,18 @@ namespace NinjaTrader.NinjaScript.Indicators
 	public partial class Indicator : NinjaTrader.Gui.NinjaScript.IndicatorRenderBase
 	{
 		private GooRSI[] cacheGooRSI;
-		public GooRSI GooRSI(int lowThreshold, int highThreshold, int upperRefLine, int lowerRefLine, bool showRefCross)
+		public GooRSI GooRSI(bool showRefCross, bool showRefRetrace, int lowThreshold, int highThreshold, int upperRefLine, int lowerRefLine)
 		{
-			return GooRSI(Input, lowThreshold, highThreshold, upperRefLine, lowerRefLine, showRefCross);
+			return GooRSI(Input, showRefCross, showRefRetrace, lowThreshold, highThreshold, upperRefLine, lowerRefLine);
 		}
 
-		public GooRSI GooRSI(ISeries<double> input, int lowThreshold, int highThreshold, int upperRefLine, int lowerRefLine, bool showRefCross)
+		public GooRSI GooRSI(ISeries<double> input, bool showRefCross, bool showRefRetrace, int lowThreshold, int highThreshold, int upperRefLine, int lowerRefLine)
 		{
 			if (cacheGooRSI != null)
 				for (int idx = 0; idx < cacheGooRSI.Length; idx++)
-					if (cacheGooRSI[idx] != null && cacheGooRSI[idx].LowThreshold == lowThreshold && cacheGooRSI[idx].HighThreshold == highThreshold && cacheGooRSI[idx].UpperRefLine == upperRefLine && cacheGooRSI[idx].LowerRefLine == lowerRefLine && cacheGooRSI[idx].ShowRefCross == showRefCross && cacheGooRSI[idx].EqualsInput(input))
+					if (cacheGooRSI[idx] != null && cacheGooRSI[idx].ShowRefCross == showRefCross && cacheGooRSI[idx].ShowRefRetrace == showRefRetrace && cacheGooRSI[idx].LowThreshold == lowThreshold && cacheGooRSI[idx].HighThreshold == highThreshold && cacheGooRSI[idx].UpperRefLine == upperRefLine && cacheGooRSI[idx].LowerRefLine == lowerRefLine && cacheGooRSI[idx].EqualsInput(input))
 						return cacheGooRSI[idx];
-			return CacheIndicator<GooRSI>(new GooRSI(){ LowThreshold = lowThreshold, HighThreshold = highThreshold, UpperRefLine = upperRefLine, LowerRefLine = lowerRefLine, ShowRefCross = showRefCross }, input, ref cacheGooRSI);
+			return CacheIndicator<GooRSI>(new GooRSI(){ ShowRefCross = showRefCross, ShowRefRetrace = showRefRetrace, LowThreshold = lowThreshold, HighThreshold = highThreshold, UpperRefLine = upperRefLine, LowerRefLine = lowerRefLine }, input, ref cacheGooRSI);
 		}
 	}
 }
@@ -182,14 +209,14 @@ namespace NinjaTrader.NinjaScript.MarketAnalyzerColumns
 {
 	public partial class MarketAnalyzerColumn : MarketAnalyzerColumnBase
 	{
-		public Indicators.GooRSI GooRSI(int lowThreshold, int highThreshold, int upperRefLine, int lowerRefLine, bool showRefCross)
+		public Indicators.GooRSI GooRSI(bool showRefCross, bool showRefRetrace, int lowThreshold, int highThreshold, int upperRefLine, int lowerRefLine)
 		{
-			return indicator.GooRSI(Input, lowThreshold, highThreshold, upperRefLine, lowerRefLine, showRefCross);
+			return indicator.GooRSI(Input, showRefCross, showRefRetrace, lowThreshold, highThreshold, upperRefLine, lowerRefLine);
 		}
 
-		public Indicators.GooRSI GooRSI(ISeries<double> input , int lowThreshold, int highThreshold, int upperRefLine, int lowerRefLine, bool showRefCross)
+		public Indicators.GooRSI GooRSI(ISeries<double> input , bool showRefCross, bool showRefRetrace, int lowThreshold, int highThreshold, int upperRefLine, int lowerRefLine)
 		{
-			return indicator.GooRSI(input, lowThreshold, highThreshold, upperRefLine, lowerRefLine, showRefCross);
+			return indicator.GooRSI(input, showRefCross, showRefRetrace, lowThreshold, highThreshold, upperRefLine, lowerRefLine);
 		}
 	}
 }
@@ -198,14 +225,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 {
 	public partial class Strategy : NinjaTrader.Gui.NinjaScript.StrategyRenderBase
 	{
-		public Indicators.GooRSI GooRSI(int lowThreshold, int highThreshold, int upperRefLine, int lowerRefLine, bool showRefCross)
+		public Indicators.GooRSI GooRSI(bool showRefCross, bool showRefRetrace, int lowThreshold, int highThreshold, int upperRefLine, int lowerRefLine)
 		{
-			return indicator.GooRSI(Input, lowThreshold, highThreshold, upperRefLine, lowerRefLine, showRefCross);
+			return indicator.GooRSI(Input, showRefCross, showRefRetrace, lowThreshold, highThreshold, upperRefLine, lowerRefLine);
 		}
 
-		public Indicators.GooRSI GooRSI(ISeries<double> input , int lowThreshold, int highThreshold, int upperRefLine, int lowerRefLine, bool showRefCross)
+		public Indicators.GooRSI GooRSI(ISeries<double> input , bool showRefCross, bool showRefRetrace, int lowThreshold, int highThreshold, int upperRefLine, int lowerRefLine)
 		{
-			return indicator.GooRSI(input, lowThreshold, highThreshold, upperRefLine, lowerRefLine, showRefCross);
+			return indicator.GooRSI(input, showRefCross, showRefRetrace, lowThreshold, highThreshold, upperRefLine, lowerRefLine);
 		}
 	}
 }
